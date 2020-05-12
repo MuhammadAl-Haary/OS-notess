@@ -2073,7 +2073,8 @@ magnetic tapes
 		* (whimsical) idea is to leave usable fragment over
 	* Poor performer
 		* Has to fo more work (like *best-fit*) to search complete list
-		* Does not result in significanly less fragmentation
+		* Does not result in significanly less fragmentation <br />
+
 **Summary**
 * First-fit is generally better than the others and easiest to implement
 * They are simple solutions to a still-existing OS or application service/function -- memory allocation
@@ -2090,7 +2091,7 @@ magnetic tapes
 	* Shuffle memory contents to place all free memory together in one large block
 	* Only if we can relocated running programs?
 		* Pointers?
-	* Generally requires hardware support
+	* Generally requires hardware support <br />
 
 **When are memory addresses bound?**
 *souce program → compliler/assmebler → object module → linkage editor (with other object modules) → load module → load → in memory binary memory image (execution/run time)*
@@ -3429,6 +3430,215 @@ for i = 1 ... 1,000,000{
 
 > Buffering, double buffering, and circular buffering are all **Bounded-Buffer Producer-Consumer problems**
 
+
+# More notes
+* File systems can support sparse files. 
+	* File systems can support files that are mostly empty. This is usually accomplished by writing brief information (metadata) respresenting the empty blocks to disk instead of the actual 'empty' space which makes up the block using less disk space. 
+	* A contrieved example would be a file that has 1 byte written at address 0 and 1 byte written at address 10000; all the space between would not be actually allocated, with only the file metadata updated. One application that might benefit from sparse file support is a virtual machine. Virtual machines simulate disks by using files, but the disk may not ever be fully used.
+* Give an example of a scenario that might benefit from a file system supporting an append only access right
+	* Log files -- append only prevents the modification of any existing log entries
+* Example of benefits of a large filesystem block size
+	* Faster sequential access as this reduces the number of I/O operations to access a file of a given size.
+	* Improves economy of storage by reducing the amount of metadata used for a file of given size
+	* Drawback:
+		* Increased inernal fragmentation. 
+		* Slower random access -- each I/O operation will load more irrelevant data when accessing a portion of data in a file that is smaller than a block
+* Example of contiguous allocation
+	* CDROMS (read only)
+* What file access pattern is particularly suited to chained file allocation on disk?
+	* Sequential file access is suited to chained file allocation. The blocks in the file form a chain or linked list, with the location of the next block stored at the end of the current block. In contrast, sequential access of an inode based file requires returning to the inode to find the location of the next file
+* What allocation strategy is suitable for random access files?
+	* Indexed allocation is appropriate for random access, as it takes a constant amount of time to access any part of the file
+* Bitmap based allocation vs disk with free block list
+	* Bitmap --  store a bitmap on disk indicating which blocks are free
+		* + can concentrate allocations in one area
+		* + Fast to find contiguous free blocks
+		* - Can be large in size. This can be alleviated using multilevel table
+		* - Expensive to search
+	* Free block list -- Link unused blocks to each otehr in a linked list. One block is kept in memory
+		* + Doesnt use extra disk space
+		* + Can keep a block of pointers in memory, saving memory space
+		* - Difficult to find free blocks as the list doesnt guarantee contiguity (though this can be alleviated with background tasks that reorganise the list to some degree)
+		* - Can use alot of disk IO when block in memory is close to full or empty. This can be alleviated by moving the block to disk when it reaches 'high water mark'
+* How can the block count in an inode differ from (file size/block size) rounded up to the nearest integer?
+	* Block counts include any blocks used for indirection and metadata
+	* Blocks may not be allocated for every part of the file in a sparse file
+* Why might direct blocks be stored in the inode itself?
+	* This provides quick access to the blocks in the start of the file by eliminating the need to seek and rotate from the inode to another part of the disk where direct block is stored. For small files, the entire file can be stored in the inode hence dramatically improving performance. Most files are small so this change improves the performance of file system operations in the majortiy of situations.
+* Given that the maximum file size of combination of direct, single indirection, double indirection, and triple indirection in an inode-based filesystem is approximately the same as a filesystem solely using triple indirection, why not simply use only triple indirection to locate all file blocks?
+	* Triple indirect block is slower to access than a direct block. Let us assume that the inode is in memory and that any other blocks are on the disk. A direct block requires 1 memory access to find the block number, and 1 disk access to load the block. A triple indirect block requires 1 memory access plus 3 disk accesses to find the block number, and another disk access to load the block. The performance hit of using triple-indirection does not affect most files, because most files are small and only use direct blocks.
+* What is the maximum file size supported by a file system with 16 direct blocks, single, double, and triple indirection? The block size is 512 bytes. Disk block numbers can be stored in 4 bytes.
+	* Number of block numbers per block
+``` python
+= Block size / Size of Block Number
+= 512 / 4
+= 128
+```
+	* Maximum number of blocks
+``` python
+= 16 + 128 + 128 ^ 2 + 128 ^ 3
+= 2,113,680
+```
+	* Maximum file size
+```python
+= Maximum number of blocks * block size
+= 2,113,680 + 512
+```
+* What is the reference count field in the inode? You should consider its relationship to directory entries in your answer.
+	* The reference count field in an inode counts the number of directory entries pointing to inode. When multiple directory entries refer to the same node, they are said to have hard links to each other
+	* When a new directory entry is created that points to inode, the file system increments the inode's reference count. Likewise, the reference count is decremented when a directory entry pointinf to the inode is deleted
+	* When the reference count is zero, we can mark the inode as free and resuse it to store another different file.
+* The filesystem buffer cache does both buffering and caching. Describe why buffering is needed. Describe how buffering can improve performance (potentially to the detriment of file system robustness). Describe how the caching component of the buffer cache improves performance.
+	* Buffering is required when the unit of transfer is different between two entities -- e.g. updating 1 byte in a disk block requires buffereing the disk block in memory
+	* Buffering improves performance at the cost of reducing file system robustness to ungraceful shutdowns
+		* Writes to disks can be buffered and written to disk in the background
+		* Allows for read ahead, improving the performance of subsequent reads.
+	* Caching is loading used data into buffer cache, such that the subsequent reads to the same block of data are accelerated by using the data in memory instead of the disk. This only benefits when the princible of locality holds, i.e. data has been used recently is likely to be reused in the near future and data that is close to each other is likely to be used close in time
+* What does flushd do on a UNIX system?
+	* Periodically syncs (writes) dirty blocks to disk (every 30 seconds) to avoid significant data loss on unexpected OS shutdown/powerloss.
+	* Also indirectly improves performance as it increases the number of clean blocks, and clean blocks can be booted immediately from buffer cache rather than writing them back.
+* Why might filesystems managing external storage devices do write-through caching (avoid buffering writes) even though there is a detrimental affect on performance.
+	* External devices have no guarantee of connectivity. To ensure filesystem consistency, writes should be made immediately without caching and be made as atomic as possible in case the drive is removed before the write has been committed to the drive.
+* Internal vs External fragmentation
+	* Internal Fragmentation: Space wasted internal to allocated region. Allocated memory might be larger than requested memory
+	* External Fragmentation: Space wasted external to allocated region. Memory exists to satisfy a request, but is not usable as its not contiguous
+	* Static partitioning is likely to suffer from internal fragmentation because more memory is allocated to each process than needed and desired partition size may not be divisible by minimum unit of allocation
+	* Dynamic partitioning is more likely to suffer from external fragmentation because dynamic partitioning gives each process exacly as much memory as it needs from a larger chunk of free memory, leaving behind a fragment of memory that is often too small to use. Dynamically partitioned machines may use compaction to reduce external fragmentation
+* Memory allocation algorithms
+	* First fit - Allocate into the first available gap found of adequate size, starting from beginning of memeory
+	* Next fit - allocate into the first available gap found, resuming the search from the last allocation
+	* Best fit - search all of memory to find the smallest valid gap, allocate into it, on the basis that it will leave the smallest unusable gap
+	* Worst fit - Search and place into the largest area, on the basis that it is likely to leave a gap big enough for something else to use
+	> First and next fit are faster than best and worst fit because they dont search through the entire list. Hence, theyre more commonly used in practice.
+* Base limit MMUs can support swapping. What is swapping? Can swapping permit an application requiring 16M memory to run on a machine with 8M RAM?
+	* Swapping - act of running each while process in main memory for a time then placing it back onto disk and vise versa. It is used when system does not have enough main memory to hold currently active processes.
+	* Assuming that the application is one program and hence a single process, swapping will not permit an application (process) requiring 16M of memory to run on a machine with 8M RAM (main memory) as the whole process is too large to fit into main memory
+* What is page based virtual memory
+	* Main memory is divided into equal sized physical frames
+	* The address space of rocess is divided up into equal sized virtual pages. Each process is given the illusion of running in its own address space
+	* Pages and frames are the same size. Pages are mapped into frames using a page table
+	* The memory management unit (MMU) is a piece of hardware that converts virtual addresses to physical addresses using the page table. The translation lookaside buffer (TLB) is a common implementationnof the MMU that caches recently used page table entries in associative memory
+	* When main memory is full, pages that haven't been recently used can be written to disk. The frame that they were previously using can be used by a new page. The pages on disk can be loaded back into main memory as needed.
+* Advantages of system with page based virtual memory compared to base limit registers that implements swapping
+	* Abstracts the organisation of physical memory
+	* Suppors sharing of pages between processes
+	* Supports partially loaded process into memory, improving performacne by allowing more processes to be active
+	* No external fragmentation
+	* A process does not need to be contiguous in memory in paging
+	* Avoids expensively loading an entire process from disk when swapping, making it faster to context switch
+	* Supports virtual address space larger than physical memory
+* Describe segmentation based virtual memory. 
+	* Segmentation supports the users view of memory. Each program is a collection of segments where a segment may represent a function, an arrray, etc. Segments can be easily shared between processes. 
+	* The programmer must be aware of segmentation
+	* A memory address is composed of segment number and an offset
+	* Segments are loaded into contiguous regions of physical memory. The segment table maps each segment number to base and a limit. The base is starting physical address of the segment and the limit is the length of the segment. Segments also record informantion on permissions.
+	* The segment table base register (STBR) stores the starting location of the segment table for the current address space.
+	* Segment table length register (STLR) stores the number of segments in the current address space
+	* Converting a virtual address to a physical address in segmentation:
+		1. Check that the segment number is less than the segment table length register. If it isnt, then there is an addressing error.
+		2. Look up the segment number in the segment table
+		3. Check that the offset in the virtual address is less than the limit of the segment. If it isnt, then there is an addressing error.
+		4. The physical address is the base of the segment plus the offset in the virtual address
+* What is a translation look aside buffer (TLB)
+	* Transition look aside buffer is a high speed associative hardware cache of recently used page table entries. It is a popular implementation of memory management unit (MMU), A minimal TLB maps virtual page numbers to physical frame numbers. A TLB may also contain address space IDs (ASIDs) and bits that indicate whether an entry is valid, cached, referenced, or global.
+* Describe a two level page table
+	* A two level page table maps virtual page numbers to physical frame numbers. It differs from a simple page table array in that not every entry in the page table has memory allocated for it. Two level page tables only allocate memory for a second level table if it contains a resident virtual page. Hence, two level page table use considerably less memory than a simple page table on average. However, two level page tables require 2 memory references to look up a mapping instead of 1. So they save memory at the expense of performance.
+	* For 32 bit (4GB) virtual address space, with 4K pages/frames: the top level page table (an array of 1024 pointers to 2nd level arrays) would be indexed such that the most significant bits of the virtual address (VADDR[31:22]) are used to look up the 2 level array (of page table entries --  frame numbers and permissions), where some of the less significant bits (VADDR[21:12]) are used to index that table
+```
+Memory for page table array = 2 ^ 20 PTEs * 4 bytes each
+= 2^22 bytes
+= 4MB
+```
+* What is inverted page table?
+	* An inverted page table is a list of pages sorted by frame number. Inverted page table hash the virtual address page number to look up into the page table, which then matches the page number (or uses a linked list structure to find the page). This index is the frame number
+	* Page table size is proportional to address space size. This is particularly on 64 bit machines, where virtual address space, if 2^64 bytes is 16 Giga Giga bytes; storing a multi level page table for this would require too many levels of indirection and be slow, and require alot of space to store.
+	* Inverted page table is an array of page numbers sorted (indexed) by frame number. Virtual address is hashed to locate the entry in frame table. The most imporatant advantage is that its size related to physical memory size (not virtual memory). Inverted page table is good for system with large addressing space but significantly less physical memory (e.g. 64 bit addressing with 2GB RAM)
+* Temporal vs Spatial locality
+	* Temporal locality: items that were recently used are likely to be used in the near future
+	* Spatial locality: items that are close to each other in space are likely to be close to each other in time
+* What us working set of a process?
+	* Constists of all pages used by the process over some period of time. This approximates the locality of the process
+* How does page size of a particular architecture affect working set size?
+	* If page size is small, the work set size is smaller (in terms of memory used, not absolute number of pages) as the pages more accurately reflect memory usage (i.e. there is less unrelated data within the page) 
+	* If the page size is big, working set also increases as more unrelated data within the larger pages are included in the current working set.
+* What is trashing? How can it be detected? How can you recover from it?
+	* Thrashing occurs when the total working set size of all processes exceeds the size of physical memory. As a result, a process page faults, replaces a page and blocks waiting on IO. Then, the next process also page faultsm replaces and also blocks to wait for the faulting page to be loaded from disk. This repeats with other processes, leading to an increase in page faults and decrease in CPU usage, which can be used to detect thrashing.
+	* To recover from thrashing, suspend a few processes so that their resident sets move to the backing store. This frees up physical memory for the remaining processes so that they can load in missing pages from their working sets. Thrashing can also be avoided by using more ram
+* Pros and cons of increasing page size
+	* Pros:
+		* Reduce page table size
+		* Increase TLB coverage
+		* Increase swapping I/O throughput, as small disk transaction times are dominated by seek & rotational delays
+	* Cons:
+		* Increases page fault latency, as swap response time is slower due to more data
+		* Increases internal fragmentation of pages - more of the page can potentially be wasted on a piece of data that is too small.
+* Two virtual memory page fetch policies. Which is less common in practice? 
+	* Demand paging - relevant pages are loaded as page faults occur
+	* Prepaging - try to load pages for a process before theyre accessed
+		* Wastes I/O bandwidth if pages are loaded unnecessarily
+		* Difficult to implement
+		* Can replace a page in the working set with unused page
+* What operating system event might we observe and use an input to an algorithm that decides how many frames an application receives?
+	* Monitor page fault frequency of an application and compare it to an ideal page fault frequency. If an application's page fault frequency is too high, give it an extra frame and vise versa.
+* Page replacement algorithms
+	* Optimal 
+		* use time travel to find the page that wont be used for the most time and boot it. 	
+		* Impossible to implement
+		* Only used as theoretical reference point for comparing over algorithms
+	* LRU
+		* Least frequently used
+		* Calculate whatever page hasnt been used the longest and boot it.
+		* Impossible to implement efficiently in practice -- requires a timestamp on every memory reference
+	* Clock page Replacement
+		* Set referenced bit to 1 when something is used.
+		* When looking for an entry to boot, set these bits to 0 if theyre 1, and kick the first 0 candidate found. Resume searches from last one booted. 
+		* Efficient (implementable) approximation to LRU -- used in practice
+	* FIFO 
+		* Remove the page that has been there longest
+		* Does not consider actual memory usage in its decision 
+		* Will evict the most frequently used page in the system
+* Describe buffering in the I/O subsystem of an operating system
+	* I/O buffering is storing I/O input into a location in memory. It is required in situations where the unit of transfer is mismatched
+	* Advantageous when the peak rate of producing and consuming data is different, since this allows data from I/O to accumulate slowly so the user process can process it more efficiently in larger chunks. Generally, this provides a performance benefit because it is faster to copy the data from a kernel to user buffer than it is to transfer in the data from I/O
+	* I/O buffering is a disadvantage in fast networking, when copying from the kernel to user buffer takes longer than transerring the data from the device and processing the data. Direct memory access is a better alternative in this situation.
+* Device controllers are generally becoming more complex in the functionality they provide (e.g. think about the difference between implementing a serial port with a flip-flop controlled by the CPU and a multi-gigabit network adapter with the TCP/IP stack on the card itself). What effect might this have on the operating system and system performance?
+	* Increased complexity of the functionality device controllers provide and their improved performance allows for offloading of I/O processing from the CPU to the I/O device. This therefore improves the performance of the system and the OS.
+* Compare I/O based on polling with interrupt-driven I/O. In what situation would you favour one technique over the other?
+	* Polling - COU repeatedly checks interrupt status register bits until they indicate that the I/O operation is complete. This is better if the I/O operation is likely to complete faster than a context switch, such as in fast networks
+		* Polling is favorable when the time spent busy waiting is less than the time spent context switching.
+	* Interrupt-driven - I/O device interrupts CPU when I/O operation is complete. This is better if the I/O operation is likely to take longer than a context switch. This is the case for most I/O operations, such as reading a block from disk.
+		* Interrupt driven I/O is preferred when you expect the operation to take longer than a context switch. 
+	> Interrupt handling involves switching to kernel mode, preserving the user level context and eventually returning. This takes much longer than a single poll of I/O status register. If the cost of interrupt handling is bigger than the time spend busy waiting in polling, then polling is faster. 1 poll is cheaper than 1 interrupt; but you only need to handle an interrupt once whereas polling may result in thousands of wasted CPU cycles. 
+* Explain how the producer-consumer problem is relevant to operating system I/O.	
+	* Many I/O devices utilise a buffer to store incoming information. Upon an event, such as entering the 'new line' character, it notifies the OS / user program. Data is then copied from the buffer to a location which it can be used, and the consumed data is cleared from the buffer.\
+	* This is an example of a bounded-buffer producer-consumer problem, where the producer is the I/O device, the consumer is the OS / user program and the buffer is bounded by its size. Therefore, concurrency control must be implemented to ensure that race conditions do not occur. Additionally, the OS / program must consume the buffer quickly enough to prevent it from overflowing and lose information.
+
+
+
+
+
+
+
+
+
+* Describe why the use of spinlocks might be more appropriate than blocking locks on a multiprocessor when compared to uniprocessor. Is there a tradeoff between spinning and blocking on a multiprocessor?
+	* Spinlocks are generally inappopriate on uniprocessors. A process on a uniprocessor either immediately acquires a spinlock or spins forever, waiting for another process to release the lock. However, that other process cant run since the first process is using the processor to spin. Hence, blocking is preferable
+	* On a multiprocessor, the thread holding the lock may be presently active on another processor, and it could release the lock at anytime. On a multiprocessor, spin locking may be worthwhile if the average time spent spinning is less than the average overhead of context switch away from, and back to the lock requestor.
+* Is a single ready queue on a multiprocessor a good idea?
+	* No
+		* A queue is a shared resource, so it can become a bottleneck when lots of processors what to schedule their next task. For example, if the queue is protected by a single lock, a single shared ready queue introduces lock contention when many processors are trying to scheudle work.
+		* It does not guarantee a process runs on the same CPU when possible, hence resulting in more cache misses.
+	* However, if the number of CPUs on a multiprocessor is small enough that the bottleneck described isnt an issue, then a single shared queue is a good idea. This is because theyre simple to implement and provide automatic load balancing
+* What is thread affinity? Why might it improve performance?
+	* Thread affinity is when a scheduler will try to schedule a thread on a particular processor or processors in a mutiprocessor machine. This increases the probability that the thread will be scheduled on a processor it has already run on. This generally improves performance because the proessor has accumulated cache entries related to the thread, so later runs on the thread may not need to reload these cache entries again.
+* Test and Set vs Test and Test and set vs MCS locks
+	* Test-and-set (TSL) is a busy-wait primitive, and will usually lead to lock contention when spinning on the lock. This results in frequent bus locking, causing heavy bus contention and slowing down the communication for other CPUs (regardless of whether they need the lock). Caching does not reduce bus contention - either TSL locks the entire bus, or the bus is used to synchronise cache entries regarding the lock. TSL therefore does NOT scale with the number of processors.
+
+	* Test-and-test-and-set (TTSL) involves spinning on the lock-value in the cache, which when released uses TSL to acquire it. As this method spins on the cache content, there is no bus contention until the lock is actually released, and cache entries need to be updated / lock needs to be acquired (set). Compared to TSL, caching is used more effectively with significantly reduced bus contention. However, there is no guarantee on the order of CPUs that acquire the lock, which could lead to starvation - whichever CPU can set the lock first will acquire the lock (this is an issue with TSL). Even though TTSL performs better than TSL, it also does NOT scale with number of processors as eventually there will be enough processors to cause heavy bus contention when acquiring the lock.
+
+	* The MCS lock addresses the issues encountered for both the TSL and TTSL locks. It involves the lock-requesting processor to enqueue its own private lock to a public queue and spin on it. When the lock is released, the lock-releaser also releases the first lock in the public queue. As a result, there is only bus contention during the instant of unlocking, and also ensures no starvation of processors when acquiring the lock (first come first served). MCS locks scale well with processors, however performs poorly with < 3 processors as there is greater overhead involved due to queuing.
+
+
 # Sample exam 1
 * A smaller page size leads to smaller page tables
 	* False – need more entries because we have more pages
@@ -3565,7 +3775,7 @@ for i = 1 ... 1,000,000{
 * It is possible to construct a time-sharing system able to withstand malicious applications on a computer architecture possessing only base and limit registers for memory management.
 	* True
 
-# OS CHEATSHEET
+# OS SAMPLE EXAM
 
 * Internal fragmentation: Space wasted due to space needed being smaller than space allocated.
 * External fragmentation: Space wasted due to space needed being larger than space available between existing allocations.
